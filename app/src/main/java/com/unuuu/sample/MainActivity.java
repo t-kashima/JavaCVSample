@@ -19,7 +19,6 @@ import android.widget.Button;
 import android.widget.FrameLayout;
 import android.widget.RelativeLayout;
 
-import org.bytedeco.javacv.FFmpegFrameFilter;
 import org.bytedeco.javacv.FFmpegFrameRecorder;
 import org.bytedeco.javacv.Frame;
 
@@ -35,10 +34,9 @@ public class MainActivity extends Activity {
     private static final String CLASS_LABEL = "RecordActivity";
     private static final String LOG_TAG = CLASS_LABEL;
     private static final String OUTPUT_PATH = "/mnt/sdcard/stream.mp4";
-    private static final String OUTPUT_TEXT_PATH = "/mnt/sdcard/stream_2.mp4";
     private static final int SAMPLE_AUDIO_RATE = 44100;
     private static final int FRAME_RATE = 30;
-    private static final int MAX_RECORD_SECONDS = 5;
+    private static final int MAX_RECORD_SECONDS = 10;
     private static final int PREVIEW_BASE_WIDTH = 320;
     private static final int PREVIEW_BASE_HEIGHT = 240;
     private static final String VIDEO_FORMAT = "mp4";
@@ -55,7 +53,6 @@ public class MainActivity extends Activity {
     private AudioRecordRunnable mAudioRecordRunnable;
     private Thread mAudioThread;
     volatile boolean mRunAudioThread = true;
-    private FFmpegFrameFilter mFilter;
 
     private CameraView mCameraView;
     private Button mRecordButton;
@@ -112,13 +109,6 @@ public class MainActivity extends Activity {
         }
 
         Log.d(LOG_TAG, "output: " + OUTPUT_PATH);
-
-
-//        try {
-//            mFilter.start();
-//        } catch (FrameFilter.Exception e) {
-//            Log.e(LOG_TAG, e.getMessage());
-//        }
 
         mRecorder = new FFmpegFrameRecorder(OUTPUT_PATH, mPreviewWidth, mPreviewHeight, 1);
         mRecorder.setFormat(VIDEO_FORMAT);
@@ -207,24 +197,6 @@ public class MainActivity extends Activity {
         }
     }
 
-//    private void appendText() {
-//        try {
-//            Movie movie = MovieCreator.build(OUTPUT_PATH);
-//
-//            TextTrackImpl subTitle = new TextTrackImpl();
-//            subTitle.getTrackMetaData().setLanguage("eng");
-//            subTitle.getSubs().add(new TextTrackImpl.Line(0, 1000, "Five"));
-//            subTitle.getSubs().add(new TextTrackImpl.Line(1000, 2000, "Two"));
-//            movie.addTrack(subTitle);
-//
-//            Container container = new DefaultMp4Builder().build(movie);
-//            container.writeContainer(new FileOutputStream(OUTPUT_TEXT_PATH).getChannel());
-//        } catch (Exception e) {
-//            Log.e(LOG_TAG, e.getMessage());
-//        }
-//        Log.d(LOG_TAG, "字幕をつけました");
-//    }
-
     /**
      * 録画中に録音するクラス
      */
@@ -253,15 +225,6 @@ public class MainActivity extends Activity {
 
                 bufferReadResult = mAudioRecord.read(audioData.array(), 0, audioData.capacity());
                 audioData.limit(bufferReadResult);
-                if (bufferReadResult > 0) {
-                    if (mIsRecording) {
-                        try {
-                            mRecorder.recordSamples(audioData);
-                        } catch (FFmpegFrameRecorder.Exception e) {
-                            Log.v(LOG_TAG, e.getMessage());
-                        }
-                    }
-                }
             }
             Log.v(LOG_TAG, "AudioThread Finished, release audioRecord");
 
@@ -372,16 +335,7 @@ public class MainActivity extends Activity {
             mTimestamps[i] = DateUtils.SECOND_IN_MILLIS * (System.currentTimeMillis() - mStartTime);
             if (yuvImage != null && mIsRecording) {
                 ((ByteBuffer)yuvImage.image[0].position(0)).put(data);
-                try {
-                    Log.d(LOG_TAG, "Writing Frame...");
-                    long t = DateUtils.SECOND_IN_MILLIS * (System.currentTimeMillis() - mStartTime);
-                    if (t > mRecorder.getTimestamp()) {
-                        mRecorder.setTimestamp(t);
-                    }
-                    mRecorder.record(yuvImage);
-                } catch (FFmpegFrameRecorder.Exception e) {
-                    Log.e(LOG_TAG, e.getMessage());
-                }
+                Log.d(LOG_TAG, "Writing Frame...");
             }
         }
 
