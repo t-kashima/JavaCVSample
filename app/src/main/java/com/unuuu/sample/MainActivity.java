@@ -7,7 +7,9 @@ import android.hardware.Camera;
 import android.hardware.Camera.PreviewCallback;
 import android.media.AudioFormat;
 import android.media.AudioRecord;
+import android.media.MediaPlayer;
 import android.media.MediaRecorder;
+import android.net.Uri;
 import android.os.Bundle;
 import android.text.format.DateUtils;
 import android.util.Log;
@@ -19,9 +21,12 @@ import android.widget.Button;
 import android.widget.FrameLayout;
 import android.widget.RelativeLayout;
 
+import com.devbrackets.android.exomedia.EMVideoView;
+
 import org.bytedeco.javacv.FFmpegFrameRecorder;
 import org.bytedeco.javacv.Frame;
 
+import java.io.File;
 import java.nio.ByteBuffer;
 import java.nio.ShortBuffer;
 import java.util.List;
@@ -36,9 +41,9 @@ public class MainActivity extends Activity {
     private static final String OUTPUT_PATH = "/mnt/sdcard/stream.mp4";
     private static final int SAMPLE_AUDIO_RATE = 44100;
     private static final int FRAME_RATE = 30;
-    private static final int MAX_RECORD_SECONDS = 10;
-    private static final int PREVIEW_BASE_WIDTH = 320;
-    private static final int PREVIEW_BASE_HEIGHT = 240;
+    private static final int MAX_RECORD_SECONDS = 5;
+    private static final int PREVIEW_BASE_WIDTH = 480;
+    private static final int PREVIEW_BASE_HEIGHT = 480;
     private static final String VIDEO_FORMAT = "mp4";
 
     long mStartTime = 0;
@@ -57,6 +62,8 @@ public class MainActivity extends Activity {
     private CameraView mCameraView;
     private Button mRecordButton;
     private FrameLayout mPreviewLayout;
+    private RelativeLayout mVideoLayout;
+    private EMVideoView mVideoView;
 
     private Frame[] mImageFrames;
     private long[] mTimestamps;
@@ -64,11 +71,20 @@ public class MainActivity extends Activity {
     private int mImagesIndex;
     private int mSamplesIndex;
 
+    private Camera mCamera;
+
     @Override
     public void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE);
         setContentView(R.layout.activity_main);
+
+        mPreviewLayout = (FrameLayout) findViewById(R.id.activity_main_layout_preview);
+        mCameraView = new CameraView(this);
+        mPreviewLayout.addView(mCameraView);
+
+        mVideoLayout = (RelativeLayout) findViewById(R.id.activity_main_layout_video);
+        mVideoView = (EMVideoView) findViewById(R.id.activity_main_video);
 
         mRecordButton = (Button) findViewById(R.id.activity_main_button_record);
         mRecordButton.setText("Start");
@@ -76,24 +92,112 @@ public class MainActivity extends Activity {
             @Override
             public void onClick(View v) {
                 if (!mIsRecording) {
+                    hideVideoView();
                     startRecording();
-                    mRecordButton.setText("Stop");
                 } else {
                     stopRecording();
-                    mRecordButton.setText("Start");
+                    showVideoView();
                 }
             }
         });
 
-        mPreviewLayout = (FrameLayout) findViewById(R.id.activity_main_layout_preview);
-        mCameraView = new CameraView(this);
-        mPreviewLayout.addView(mCameraView);
+        // カメラを初期化する
+        initCamera();
+
+        // 録画ファイルが存在している時はすぐ再生する
+        if (new File(OUTPUT_PATH).exists()) {
+            showVideoView();
+        }
+    }
+
+    /**
+     * カメラを初期化する
+     */
+    private void initCamera() {
+        mCamera = Camera.open();
+        // 最適なプレビューのサイズを探す
+        Camera.Parameters parameters = mCamera.getParameters();
+        List<Camera.Size> sizes = parameters.getSupportedPreviewSizes();
+        Camera.Size optimalSize = getOptimalPreviewSize(sizes, PREVIEW_BASE_WIDTH, PREVIEW_BASE_HEIGHT);
+        mPreviewWidth = optimalSize.width;
+        mPreviewHeight = optimalSize.height;
+        parameters.setPreviewSize(mPreviewWidth, mPreviewHeight);
+        parameters.setPreviewFrameRate(FRAME_RATE);
+        mCamera.setParameters(parameters);
+    }
+
+    /**
+     * 最適なプレビューサイズを取得する
+     *
+     * @param sizes プレビューのサイズのリスト
+     * @param w ベースの横幅
+     * @param h ベースの縦幅
+     * @return 最低なプレビューサイズ
+     */
+    private Camera.Size getOptimalPreviewSize(List<Camera.Size> sizes, int w, int h) {
+        int min = Integer.MAX_VALUE;
+        Camera.Size optimalSize = sizes.get(0);
+
+        for(Camera.Size size : sizes){
+            if(size .width < w || size.height < h){
+                continue;
+            }
+
+            int dw = Math.abs(w - size.width);
+            int dh = Math.abs(h - size.height);
+
+            if(min > dw + dh){
+                min = dw + dh;
+                optimalSize = size;
+            }
+        }
+
+        return optimalSize;
+    }
+
+    /**
+     * 録画したビデオを非表示にする
+     */
+    private void hideVideoView() {
+        mRecordButton.setText("Stop");
+        mPreviewLayout.setVisibility(View.VISIBLE);
+        mCameraView.setVisibility(View.VISIBLE);
+        if (mVideoView.isPlaying()) {
+            mVideoView.stopPlayback();
+        }
+        mVideoLayout.setVisibility(View.INVISIBLE);
+    }
+
+    /**
+     * 録画したビデオを再生する
+     */
+    private void showVideoView() {
+        mRecordButton.setText("Start");
+        mPreviewLayout.setVisibility(View.INVISIBLE);
+        mCameraView.setVisibility(View.INVISIBLE);
+        mVideoLayout.setVisibility(View.VISIBLE);
+        mVideoView.setOnPreparedListener(new MediaPlayer.OnPreparedListener() {
+            @Override
+            public void onPrepared(MediaPlayer mp) {
+                mVideoView.start();
+            }
+        });
+        mVideoView.setOnCompletionListener(new MediaPlayer.OnCompletionListener() {
+            @Override
+            public void onCompletion(MediaPlayer mp) {
+                mVideoView.seekTo(0);
+                mVideoView.start();
+            }
+        });
+        mVideoView.setVideoURI(Uri.parse(OUTPUT_PATH));
     }
 
     @Override
     protected void onDestroy() {
         super.onDestroy();
         mIsRecording = false;
+        mCamera.release();
+        mCamera = null;
     }
 
     /**
@@ -240,8 +344,6 @@ public class MainActivity extends Activity {
      * カメラのプレビューを表示するクラス
      */
     class CameraView extends SurfaceView implements SurfaceHolder.Callback, PreviewCallback {
-        private Camera mCamera;
-
         public CameraView(Context context) {
             super(context);
             SurfaceHolder holder = getHolder();
@@ -251,27 +353,11 @@ public class MainActivity extends Activity {
 
         @Override
         public void surfaceCreated(SurfaceHolder holder) {
-            try {
-                mCamera = Camera.open();
-            } catch (Exception e) {
-                Log.e(LOG_TAG, e.toString());
-            }
         }
 
         @Override
         public void surfaceChanged(SurfaceHolder holder, int format, int width, int height) {
-            if (mCamera == null) {
-                return;
-            }
-
             mCamera.stopPreview();
-
-            // 最適なプレビューのサイズを探す
-            Camera.Parameters parameters = mCamera.getParameters();
-            List<Camera.Size> sizes = parameters.getSupportedPreviewSizes();
-            Camera.Size optimalSize = getOptimalPreviewSize(sizes, PREVIEW_BASE_WIDTH, PREVIEW_BASE_HEIGHT);
-            mPreviewWidth = optimalSize.width;
-            mPreviewHeight = optimalSize.height;
 
             Log.d(LOG_TAG, "最適なプレビューサイズ: " + mPreviewWidth + ", " + mPreviewHeight);
 
@@ -296,10 +382,6 @@ public class MainActivity extends Activity {
             mCameraView.setLayoutParams(cameraViewParams);
 
             Log.d(LOG_TAG, "CameraViewのサイズ: " + previewLayoutWidth + ", " + previewLayoutHeight);
-
-            parameters.setPreviewSize(mPreviewWidth, mPreviewHeight);
-            parameters.setPreviewFrameRate(FRAME_RATE);
-            mCamera.setParameters(parameters);
             try {
                 mCamera.setPreviewCallback(this);
                 mCamera.setPreviewDisplay(holder);
@@ -314,8 +396,6 @@ public class MainActivity extends Activity {
             try {
                 mCamera.setPreviewCallback(null);
                 mCamera.stopPreview();
-                mCamera.release();
-                mCamera = null;
             } catch (RuntimeException e) {
                 Log.e(LOG_TAG, e.getMessage());
             }
@@ -334,30 +414,9 @@ public class MainActivity extends Activity {
 
             mTimestamps[i] = DateUtils.SECOND_IN_MILLIS * (System.currentTimeMillis() - mStartTime);
             if (yuvImage != null && mIsRecording) {
-                ((ByteBuffer)yuvImage.image[0].position(0)).put(data);
+                ((ByteBuffer) yuvImage.image[0].position(0)).put(data);
                 Log.d(LOG_TAG, "Writing Frame...");
             }
-        }
-
-        private Camera.Size getOptimalPreviewSize(List<Camera.Size> sizes, int w, int h) {
-            int min = Integer.MAX_VALUE;
-            Camera.Size optimalSize = sizes.get(0);
-
-            for(Camera.Size size : sizes){
-                if(size .width < w || size.height < h){
-                    continue;
-                }
-
-                int dw = Math.abs(w - size.width);
-                int dh = Math.abs(h - size.height);
-
-                if(min > dw + dh){
-                    min = dw + dh;
-                    optimalSize = size;
-                }
-            }
-
-            return optimalSize;
         }
     }
 }

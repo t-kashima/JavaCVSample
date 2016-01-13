@@ -2,6 +2,7 @@ apply plugin: 'com.android.application'
 
 repositories {
     mavenCentral()
+    maven { url "https://jitpack.io" }
 }
 
 android {
@@ -10,7 +11,7 @@ android {
 
     defaultConfig {
         applicationId "com.unuuu.sample"
-        minSdkVersion 14
+        minSdkVersion 16
         targetSdkVersion 22
         versionCode 1
         versionName "1.0"
@@ -22,6 +23,7 @@ android {
         }
     }
     packagingOptions {
+        exclude 'lib/armeabi/*.so'
         exclude 'META-INF/maven/org.bytedeco.javacpp-presets/ffmpeg/pom.properties'
         exclude 'META-INF/maven/org.bytedeco.javacpp-presets/ffmpeg/pom.xml'
     }
@@ -35,4 +37,9 @@ dependencies {
     compile 'org.bytedeco:javacv:1.1'
     compile 'org.bytedeco.javacpp-presets:ffmpeg:2.8.1-1.1:android-arm'
     compile 'org.bytedeco.javacpp-presets:ffmpeg:2.8.1-1.1:android-x86'
+
+    // ExoMedia
+    compile ('com.github.t-kashima:ExoMedia:a1f60dead7') {
+        exclude module: 'appcompat-v7'
+    }
 }
