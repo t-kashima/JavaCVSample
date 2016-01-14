@@ -44,11 +44,13 @@ public class HolaModel implements TextureView.SurfaceTextureListener, Camera.Pre
     private int mImagesIndex;
     private int mSamplesIndex;
 
-    public interface OnFinishRecordListener {
+    public interface OnRecordInfoListener {
+        void onStart();
+        void onCancel();
         void onFinish();
     }
 
-    private OnFinishRecordListener mFinishRecordListener;
+    private OnRecordInfoListener mRecordInfoListener;
 
     public HolaModel() {
         mCameraRepository = new CameraRepository();
@@ -114,6 +116,47 @@ public class HolaModel implements TextureView.SurfaceTextureListener, Camera.Pre
 
         if (textureView.isAvailable()) {
             startPreview(textureView.getSurfaceTexture());
+        }
+
+        if (mRecordInfoListener != null) {
+            mRecordInfoListener.onStart();
+        }
+    }
+
+    /**
+     * 録画を中断する
+     */
+    public void cancelRecording() {
+        mRunAudioThread = false;
+        if (mAudioThread != null) {
+            try {
+                mAudioThread.join();
+            } catch (InterruptedException e) {
+                Log.e(LOG_TAG, e.toString());
+            }
+        }
+        mAudioRecordRunnable = null;
+        mAudioThread = null;
+
+        if (mRecorder != null && mIsRecording) {
+            mIsRecording = false;
+            Log.v(LOG_TAG,"Finishing recording, calling stop and release on recorder");
+            try {
+                mRecorder.stop();
+                mRecorder.release();
+            } catch (FFmpegFrameRecorder.Exception e) {
+                Log.e(LOG_TAG, e.getMessage());
+            }
+            mRecorder = null;
+
+            mCamera.setPreviewCallback(null);
+            mCamera.stopPreview();
+            mCamera.release();
+            mCamera = null;
+
+            if (mRecordInfoListener != null) {
+                mRecordInfoListener.onCancel();
+            }
         }
     }
 
@@ -188,8 +231,8 @@ public class HolaModel implements TextureView.SurfaceTextureListener, Camera.Pre
             mCamera.release();
             mCamera = null;
 
-            if (mFinishRecordListener != null) {
-                mFinishRecordListener.onFinish();
+            if (mRecordInfoListener != null) {
+                mRecordInfoListener.onFinish();
             }
         }
     }
@@ -307,7 +350,7 @@ public class HolaModel implements TextureView.SurfaceTextureListener, Camera.Pre
         }
     }
 
-    public void setOnFinishRecordListener(OnFinishRecordListener listener) {
-        mFinishRecordListener = listener;
+    public void setOnRecordInfoListener(OnRecordInfoListener listener) {
+        mRecordInfoListener = listener;
     }
 }

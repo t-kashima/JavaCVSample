@@ -32,7 +32,22 @@ public class MainActivity extends Activity {
         setContentView(R.layout.activity_main);
 
         mHolaModel = new HolaModel();
-        mHolaModel.setOnFinishRecordListener(this::showVideoView);
+        mHolaModel.setOnRecordInfoListener(new HolaModel.OnRecordInfoListener() {
+            @Override
+            public void onStart() {
+
+            }
+
+            @Override
+            public void onCancel() {
+                showVideoView();
+            }
+
+            @Override
+            public void onFinish() {
+                showVideoView();
+            }
+        });
 
         mPreviewLayout = (FrameLayout) findViewById(R.id.activity_main_layout_preview);
         mTextureView = (TextureView) findViewById(R.id.activity_main_surface_preview);
@@ -81,6 +96,6 @@ public class MainActivity extends Activity {
     @Override
     protected void onDestroy() {
         super.onDestroy();
-        mHolaModel.stopRecording();
+        mHolaModel.cancelRecording();
     }
 }
