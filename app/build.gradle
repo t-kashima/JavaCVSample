@@ -1,4 +1,15 @@
 apply plugin: 'com.android.application'
+apply plugin: 'me.tatarka.retrolambda'
+
+buildscript {
+    repositories {
+        mavenCentral()
+     }
+
+    dependencies {
+         classpath 'me.tatarka:gradle-retrolambda:3.2.4'
+    }
+}
 
 repositories {
     mavenCentral()
@@ -27,6 +38,11 @@ android {
         exclude 'META-INF/maven/org.bytedeco.javacpp-presets/ffmpeg/pom.properties'
         exclude 'META-INF/maven/org.bytedeco.javacpp-presets/ffmpeg/pom.xml'
     }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_1_8
+        targetCompatibility JavaVersion.VERSION_1_8
+    }
 }
 
 dependencies {
@@ -42,4 +58,7 @@ dependencies {
     compile ('com.github.t-kashima:ExoMedia:a1f60dead7') {
         exclude module: 'appcompat-v7'
     }
+
+    // RxAndroid
+    compile 'io.reactivex:rxandroid:1.0.0'
 }
