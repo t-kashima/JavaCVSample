@@ -10,6 +10,8 @@ import android.util.Log;
 import android.view.TextureView;
 import android.view.ViewGroup;
 
+import org.bytedeco.javacpp.avutil;
+import org.bytedeco.javacv.FFmpegFrameFilter;
 import org.bytedeco.javacv.FFmpegFrameRecorder;
 import org.bytedeco.javacv.Frame;
 
@@ -69,7 +71,7 @@ public class HolaModel implements TextureView.SurfaceTextureListener, Camera.Pre
         }
         Camera.Parameters parameters = mCamera.getParameters();
         Camera.Size previewSize = parameters.getPreviewSize();
-        mRecorder = mRecorderRepository.getRecorder(OUTPUT_PATH, previewSize.width, previewSize.height);
+        mRecorder = mRecorderRepository.getRecorder(OUTPUT_PATH, PREVIEW_BASE_WIDTH, PREVIEW_BASE_HEIGHT);
         mAudioRecordRunnable = new AudioRecordRunnable(mRecorder.getSampleRate());
         mAudioThread = new Thread(mAudioRecordRunnable);
         mRunAudioThread = true;
@@ -78,7 +80,7 @@ public class HolaModel implements TextureView.SurfaceTextureListener, Camera.Pre
         mImageFrames = new Frame[MAX_RECORD_SECONDS * (int)(mRecorder.getFrameRate())];
         mTimestamps = new long[mImageFrames.length];
         for (int i = 0; i < mImageFrames.length; i++) {
-            mImageFrames[i] = new Frame(previewSize.width, previewSize.height, Frame.DEPTH_UBYTE, 2);
+            mImageFrames[i] = new Frame(PREVIEW_BASE_WIDTH, PREVIEW_BASE_HEIGHT, Frame.DEPTH_UBYTE, 2);
             mTimestamps[i] = -1;
         }
 
@@ -176,42 +178,25 @@ public class HolaModel implements TextureView.SurfaceTextureListener, Camera.Pre
         mAudioThread = null;
 
         if (mRecorder != null && mIsRecording) {
+            mCamera.setPreviewCallback(null);
+            mCamera.stopPreview();
+
             Log.v(LOG_TAG,"Writing frames");
             try {
-                int firstIndex = mImagesIndex % mSamples.length;
-                int lastIndex = (mImagesIndex - 1) % mImageFrames.length;
-                if (mImagesIndex <= mImageFrames.length) {
-                    firstIndex = 0;
-                    lastIndex = mImagesIndex - 1;
-                }
-                if ((mStartTime = mTimestamps[lastIndex] - MAX_RECORD_SECONDS * 1000000L) < 0) {
-                    mStartTime = 0;
-                }
-                if (lastIndex < firstIndex) {
-                    lastIndex += mImageFrames.length;
-                }
+                int firstIndex = 0;
+                int lastIndex = mImagesIndex - 1;
                 for (int i = firstIndex; i <= lastIndex; i++) {
-                    long t = mTimestamps[i % mTimestamps.length] - mStartTime;
-                    if (t >= 0) {
-                        if (t > mRecorder.getTimestamp()) {
-                            mRecorder.setTimestamp(t);
-                        }
-                        mRecorder.record(mImageFrames[i % mImageFrames.length]);
+                    long t = mTimestamps[i];
+                    if (t > mRecorder.getTimestamp()) {
+                        mRecorder.setTimestamp(t);
+                    }
+                    mRecorder.record(mImageFrames[i]);
+
+                    if (i <= (mSamplesIndex - 1)) {
+                        mRecorder.recordSamples(mSamples[i]);
                     }
                 }
-
-                firstIndex = mSamplesIndex % mSamples.length;
-                lastIndex = (mSamplesIndex - 1) % mSamples.length;
-                if (mSamplesIndex <= mSamples.length) {
-                    firstIndex = 0;
-                    lastIndex = mSamplesIndex - 1;
-                }
-                if (lastIndex < firstIndex) {
-                    lastIndex += mSamples.length;
-                }
-                for (int i = firstIndex; i <= lastIndex; i++) {
-                    mRecorder.recordSamples(mSamples[i % mSamples.length]);
-                }
+                Log.d(LOG_TAG, "動画のフレーム数: " + mImageFrames.length + ", 音声のフレーム数: " + mSamples.length);
             } catch (FFmpegFrameRecorder.Exception e) {
                 Log.e(LOG_TAG, e.getMessage());
             }
@@ -226,8 +211,6 @@ public class HolaModel implements TextureView.SurfaceTextureListener, Camera.Pre
             }
             mRecorder = null;
 
-            mCamera.setPreviewCallback(null);
-            mCamera.stopPreview();
             mCamera.release();
             mCamera = null;
 
@@ -320,7 +303,18 @@ public class HolaModel implements TextureView.SurfaceTextureListener, Camera.Pre
 
         mTimestamps[i] = DateUtils.SECOND_IN_MILLIS * (System.currentTimeMillis() - mStartTime);
         if (yuvImage != null && mIsRecording) {
-            ((ByteBuffer) yuvImage.image[0].position(0)).put(data);
+            try {
+                Camera.Parameters parameters = camera.getParameters();
+                Camera.Size previewSize = parameters.getPreviewSize();
+                FFmpegFrameFilter filter = new FFmpegFrameFilter("crop=" + PREVIEW_BASE_WIDTH + ":" + PREVIEW_BASE_HEIGHT, previewSize.width, previewSize.height);
+                filter.setPixelFormat(avutil.AV_PIX_FMT_NV21);
+                filter.start();
+                Frame frame = new Frame(previewSize.width, previewSize.height, Frame.DEPTH_UBYTE, 2);
+                ((ByteBuffer) frame.image[0].position(0)).put(data);
+                filter.push(frame);
+                mImageFrames[i] = filter.pull();
+            } catch (FFmpegFrameFilter.Exception e) {
+            }
             Log.d(LOG_TAG, "Writing Frame...");
         }
 
@@ -331,7 +325,7 @@ public class HolaModel implements TextureView.SurfaceTextureListener, Camera.Pre
 
     /**
      * プレビューを開始する
-     * @param surface
+     * @param surface プレビューを表示するテクスチャ
      */
     private void startPreview(SurfaceTexture surface) {
         mCamera.stopPreview();
