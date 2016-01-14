@@ -1,13 +1,13 @@
 package com.unuuu.sample;
 
+import android.graphics.SurfaceTexture;
 import android.hardware.Camera;
 import android.media.AudioFormat;
 import android.media.AudioRecord;
 import android.media.MediaRecorder;
 import android.text.format.DateUtils;
 import android.util.Log;
-import android.view.SurfaceHolder;
-import android.view.SurfaceView;
+import android.view.TextureView;
 import android.view.ViewGroup;
 
 import org.bytedeco.javacv.FFmpegFrameRecorder;
@@ -16,7 +16,7 @@ import org.bytedeco.javacv.Frame;
 import java.nio.ByteBuffer;
 import java.nio.ShortBuffer;
 
-public class HolaModel implements SurfaceHolder.Callback, Camera.PreviewCallback {
+public class HolaModel implements TextureView.SurfaceTextureListener, Camera.PreviewCallback {
 
     private static final String CLASS_LABEL = "HolaModel";
     private static final String LOG_TAG = CLASS_LABEL;
@@ -52,9 +52,9 @@ public class HolaModel implements SurfaceHolder.Callback, Camera.PreviewCallback
     /**
      * 録画を開始する
      *
-     * @param surfaceView プレビューを表示するView
+     * @param textureView プレビューを表示するView
      */
-    public void startRecording(SurfaceView surfaceView) {
+    public void startRecording(TextureView textureView) {
         mCamera = mCameraRepository.getCamera(CameraRepository.CameraType.REAR, PREVIEW_BASE_WIDTH, PREVIEW_BASE_HEIGHT);
         if (mCamera == null) {
             return;
@@ -74,12 +74,10 @@ public class HolaModel implements SurfaceHolder.Callback, Camera.PreviewCallback
             mTimestamps[i] = -1;
         }
 
-        SurfaceHolder surfaceHolder = surfaceView.getHolder();
-        surfaceHolder.addCallback(this);
-        surfaceHolder.setType(SurfaceHolder.SURFACE_TYPE_PUSH_BUFFERS);
+        textureView.setSurfaceTextureListener(this);
 
         // SurfaceViewの縦横比をプレビューの縦横比に合わせる
-        ViewGroup.MarginLayoutParams layoutParams = (ViewGroup.MarginLayoutParams)surfaceView.getLayoutParams();
+        ViewGroup.MarginLayoutParams layoutParams = (ViewGroup.MarginLayoutParams)textureView.getLayoutParams();
         int previewLayoutWidth = layoutParams.width;
         int previewLayoutHeight = layoutParams.height;
         int topMargin = 0;
@@ -95,7 +93,7 @@ public class HolaModel implements SurfaceHolder.Callback, Camera.PreviewCallback
         layoutParams.leftMargin = -leftMargin;
         layoutParams.width = previewLayoutWidth;
         layoutParams.height = previewLayoutHeight;
-        surfaceView.setLayoutParams(layoutParams);
+        textureView.setLayoutParams(layoutParams);
 
         Log.d(LOG_TAG, "SurfaceViewのサイズ: " + previewLayoutWidth + ", " + previewLayoutHeight);
 
@@ -106,6 +104,10 @@ public class HolaModel implements SurfaceHolder.Callback, Camera.PreviewCallback
             mAudioThread.start();
         } catch (FFmpegFrameRecorder.Exception e) {
             Log.e(LOG_TAG, e.getMessage());
+        }
+
+        if (textureView.isAvailable()) {
+            startPreview(textureView.getSurfaceTexture());
         }
     }
 
@@ -174,6 +176,11 @@ public class HolaModel implements SurfaceHolder.Callback, Camera.PreviewCallback
                 Log.e(LOG_TAG, e.getMessage());
             }
             mRecorder = null;
+
+            mCamera.setPreviewCallback(null);
+            mCamera.stopPreview();
+            mCamera.release();
+            mCamera = null;
         }
     }
 
@@ -228,46 +235,32 @@ public class HolaModel implements SurfaceHolder.Callback, Camera.PreviewCallback
                 mAudioRecord.release();
                 mAudioRecord = null;
             }
-
-            mCamera.setPreviewCallback(null);
-            mCamera.stopPreview();
-            mCamera.release();
-            mCamera = null;
         }
     }
 
     @Override
-    public void surfaceCreated(SurfaceHolder holder) {
-    }
-
-    @Override
-    public void surfaceChanged(SurfaceHolder holder, int format, int width, int height) {
+    public void onSurfaceTextureAvailable(SurfaceTexture surface, int width, int height) {
         if (mCamera == null) {
             return;
         }
-
-        mCamera.stopPreview();
-        try {
-            mCamera.setPreviewCallback(this);
-            mCamera.setPreviewDisplay(holder);
-            mCamera.startPreview();
-        } catch (Exception e) {
-            Log.e(LOG_TAG, e.getMessage());
-        }
+        startPreview(surface);
     }
 
     @Override
-    public void surfaceDestroyed(SurfaceHolder holder) {
-        if (mCamera == null) {
-            return;
-        }
+    public void onSurfaceTextureSizeChanged(SurfaceTexture surface,int width,int height) {
+    }
 
-        try {
-            mCamera.setPreviewCallback(null);
-            mCamera.stopPreview();
-        } catch (RuntimeException e) {
-            Log.e(LOG_TAG, e.getMessage());
+    @Override
+    public void onSurfaceTextureUpdated(SurfaceTexture surface) {
+    }
+
+    @Override
+    public boolean onSurfaceTextureDestroyed(SurfaceTexture surface) {
+        if (mCamera == null) {
+            return true;
         }
+        stopPreview();
+        return true;
     }
 
     @Override
@@ -285,6 +278,27 @@ public class HolaModel implements SurfaceHolder.Callback, Camera.PreviewCallback
         if (yuvImage != null && mIsRecording) {
             ((ByteBuffer) yuvImage.image[0].position(0)).put(data);
             Log.d(LOG_TAG, "Writing Frame...");
+        }
+    }
+
+    private void startPreview(SurfaceTexture surface) {
+        mCamera.stopPreview();
+        try {
+            mCamera.setPreviewCallback(this);
+            mCamera.setPreviewTexture(surface);
+            mCamera.startPreview();
+        } catch (Exception e) {
+            Log.e(LOG_TAG, e.getMessage());
+        }
+
+    }
+
+    private void stopPreview() {
+        try {
+            mCamera.setPreviewCallback(null);
+            mCamera.stopPreview();
+        } catch (RuntimeException e) {
+            Log.e(LOG_TAG, e.getMessage());
         }
     }
 }

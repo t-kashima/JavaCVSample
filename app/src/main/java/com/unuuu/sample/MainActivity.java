@@ -4,7 +4,7 @@ import android.app.Activity;
 import android.content.pm.ActivityInfo;
 import android.net.Uri;
 import android.os.Bundle;
-import android.view.SurfaceView;
+import android.view.TextureView;
 import android.view.View;
 import android.widget.Button;
 import android.widget.FrameLayout;
@@ -18,7 +18,7 @@ public class MainActivity extends Activity {
 
     private static final String OUTPUT_PATH = "/mnt/sdcard/stream.mp4";
 
-    private SurfaceView mSurfaceView;
+    private TextureView mTextureView;
     private Button mRecordButton;
     private FrameLayout mPreviewLayout;
     private RelativeLayout mVideoLayout;
@@ -34,7 +34,7 @@ public class MainActivity extends Activity {
         mHolaModel = new HolaModel();
 
         mPreviewLayout = (FrameLayout) findViewById(R.id.activity_main_layout_preview);
-        mSurfaceView = (SurfaceView) findViewById(R.id.activity_main_surface_preview);
+        mTextureView = (TextureView) findViewById(R.id.activity_main_surface_preview);
         mVideoLayout = (RelativeLayout) findViewById(R.id.activity_main_layout_video);
         mVideoView = (EMVideoView) findViewById(R.id.activity_main_video);
 
@@ -42,8 +42,8 @@ public class MainActivity extends Activity {
         mRecordButton.setText("Start");
         mRecordButton.setOnClickListener(v -> {
             if (!mHolaModel.isRecording()) {
+                mHolaModel.startRecording(mTextureView);
                 hideVideoView();
-                mHolaModel.startRecording(mSurfaceView);
             } else {
                 mHolaModel.stopRecording();
                 showVideoView();
@@ -62,7 +62,6 @@ public class MainActivity extends Activity {
     private void hideVideoView() {
         mRecordButton.setText("Stop");
         mPreviewLayout.setVisibility(View.VISIBLE);
-        mSurfaceView.setVisibility(View.VISIBLE);
         if (mVideoView.isPlaying()) {
             mVideoView.stopPlayback();
         }
@@ -75,7 +74,6 @@ public class MainActivity extends Activity {
     private void showVideoView() {
         mRecordButton.setText("Start");
         mPreviewLayout.setVisibility(View.INVISIBLE);
-        mSurfaceView.setVisibility(View.INVISIBLE);
         mVideoLayout.setVisibility(View.VISIBLE);
         mVideoView.setOnPreparedListener(mp -> mVideoView.start());
         mVideoView.setOnCompletionListener(mp -> {

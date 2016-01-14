@@ -10,7 +10,7 @@
         android:layout_above="@+id/activity_main_button_record"
         android:layout_centerInParent="true"
         android:background="@android:color/black">
-        <SurfaceView
+        <TextureView
             android:id="@+id/activity_main_surface_preview"
             android:layout_width="300dp"
             android:layout_height="300dp"/>
