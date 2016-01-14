@@ -44,6 +44,12 @@ public class HolaModel implements TextureView.SurfaceTextureListener, Camera.Pre
     private int mImagesIndex;
     private int mSamplesIndex;
 
+    public interface OnFinishRecordListener {
+        void onFinish();
+    }
+
+    private OnFinishRecordListener mFinishRecordListener;
+
     public HolaModel() {
         mCameraRepository = new CameraRepository();
         mRecorderRepository = new RecorderRepository();
@@ -181,16 +187,11 @@ public class HolaModel implements TextureView.SurfaceTextureListener, Camera.Pre
             mCamera.stopPreview();
             mCamera.release();
             mCamera = null;
-        }
-    }
 
-    /**
-     * 録画中かどうか
-     *
-     * @return 録画中かどうか
-     */
-    public boolean isRecording() {
-        return mIsRecording;
+            if (mFinishRecordListener != null) {
+                mFinishRecordListener.onFinish();
+            }
+        }
     }
 
     /**
@@ -279,6 +280,10 @@ public class HolaModel implements TextureView.SurfaceTextureListener, Camera.Pre
             ((ByteBuffer) yuvImage.image[0].position(0)).put(data);
             Log.d(LOG_TAG, "Writing Frame...");
         }
+
+        if (mImagesIndex % mImageFrames.length == 0) {
+            stopRecording();
+        }
     }
 
     private void startPreview(SurfaceTexture surface) {
@@ -300,5 +305,9 @@ public class HolaModel implements TextureView.SurfaceTextureListener, Camera.Pre
         } catch (RuntimeException e) {
             Log.e(LOG_TAG, e.getMessage());
         }
+    }
+
+    public void setOnFinishRecordListener(OnFinishRecordListener listener) {
+        mFinishRecordListener = listener;
     }
 }

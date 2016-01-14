@@ -7,8 +7,8 @@
         android:id="@+id/activity_main_layout_preview"
         android:layout_width="300dp"
         android:layout_height="300dp"
-        android:layout_above="@+id/activity_main_button_record"
-        android:layout_centerInParent="true"
+        android:layout_alignParentTop="true"
+        android:layout_centerHorizontal="true"
         android:background="@android:color/black">
         <TextureView
             android:id="@+id/activity_main_surface_preview"
@@ -20,8 +20,8 @@
         android:id="@+id/activity_main_layout_video"
         android:layout_width="300dp"
         android:layout_height="300dp"
-        android:layout_above="@+id/activity_main_button_record"
-        android:layout_centerInParent="true"
+        android:layout_alignParentTop="true"
+        android:layout_centerHorizontal="true"
         android:clipChildren="false"
         android:background="@android:color/black"
         android:visibility="gone">
@@ -37,5 +37,6 @@
          android:layout_width="wrap_content"
          android:layout_height="wrap_content"
          android:layout_centerHorizontal="true"
-         android:layout_alignParentBottom="true" />
+         android:layout_alignParentBottom="true"
+         android:text="Start"/>
  </RelativeLayout>

@@ -32,6 +32,7 @@ public class MainActivity extends Activity {
         setContentView(R.layout.activity_main);
 
         mHolaModel = new HolaModel();
+        mHolaModel.setOnFinishRecordListener(this::showVideoView);
 
         mPreviewLayout = (FrameLayout) findViewById(R.id.activity_main_layout_preview);
         mTextureView = (TextureView) findViewById(R.id.activity_main_surface_preview);
@@ -39,15 +40,9 @@ public class MainActivity extends Activity {
         mVideoView = (EMVideoView) findViewById(R.id.activity_main_video);
 
         mRecordButton = (Button) findViewById(R.id.activity_main_button_record);
-        mRecordButton.setText("Start");
         mRecordButton.setOnClickListener(v -> {
-            if (!mHolaModel.isRecording()) {
-                mHolaModel.startRecording(mTextureView);
-                hideVideoView();
-            } else {
-                mHolaModel.stopRecording();
-                showVideoView();
-            }
+            mHolaModel.startRecording(mTextureView);
+            hideVideoView();
         });
 
         // 録画ファイルが存在している時はすぐ再生する
@@ -60,7 +55,7 @@ public class MainActivity extends Activity {
      * 録画したビデオを非表示にする
      */
     private void hideVideoView() {
-        mRecordButton.setText("Stop");
+        mRecordButton.setVisibility(View.GONE);
         mPreviewLayout.setVisibility(View.VISIBLE);
         if (mVideoView.isPlaying()) {
             mVideoView.stopPlayback();
@@ -72,7 +67,7 @@ public class MainActivity extends Activity {
      * 録画したビデオを再生する
      */
     private void showVideoView() {
-        mRecordButton.setText("Start");
+        mRecordButton.setVisibility(View.VISIBLE);
         mPreviewLayout.setVisibility(View.INVISIBLE);
         mVideoLayout.setVisibility(View.VISIBLE);
         mVideoView.setOnPreparedListener(mp -> mVideoView.start());
