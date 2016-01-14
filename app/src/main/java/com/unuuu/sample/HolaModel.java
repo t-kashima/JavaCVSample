@@ -329,6 +329,10 @@ public class HolaModel implements TextureView.SurfaceTextureListener, Camera.Pre
         }
     }
 
+    /**
+     * プレビューを開始する
+     * @param surface
+     */
     private void startPreview(SurfaceTexture surface) {
         mCamera.stopPreview();
         try {
@@ -341,6 +345,9 @@ public class HolaModel implements TextureView.SurfaceTextureListener, Camera.Pre
 
     }
 
+    /**
+     * プレビューを止める
+     */
     private void stopPreview() {
         try {
             mCamera.setPreviewCallback(null);
@@ -350,6 +357,11 @@ public class HolaModel implements TextureView.SurfaceTextureListener, Camera.Pre
         }
     }
 
+    /**
+     * 録画に関するリスナー
+     *
+     * @param listener リスナー
+     */
     public void setOnRecordInfoListener(OnRecordInfoListener listener) {
         mRecordInfoListener = listener;
     }
