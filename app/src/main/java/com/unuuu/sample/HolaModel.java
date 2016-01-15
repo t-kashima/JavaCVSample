@@ -25,8 +25,8 @@ public class HolaModel implements TextureView.SurfaceTextureListener, Camera.Pre
     private static final String CLASS_LABEL = "HolaModel";
     private static final String LOG_TAG = CLASS_LABEL;
     private static final String OUTPUT_PATH = "/mnt/sdcard/stream.mp4";
-    private static final int VIDEO_WIDTH = 480;
-    private static final int VIDEO_HEIGHT = 480;
+    private static final int BASE_VIDEO_WIDTH = 480;
+    private static final int BASE_VIDEO_HEIGHT = 480;
     private static final int MAX_RECORD_SECONDS = 5;
 
     private CameraRepository mCameraRepository;
@@ -38,13 +38,13 @@ public class HolaModel implements TextureView.SurfaceTextureListener, Camera.Pre
 
     /* audio data getting thread */
     private AudioRecord mAudioRecord;
-    volatile boolean mRunAudioThread = true;
+    volatile boolean mIsRunAudioThread = true;
     private AudioRecordRunnable mAudioRecordRunnable;
     private Thread mAudioThread;
     private ShortBuffer[] mSamples;
     private int mSamplesIndex;
 
-    volatile boolean mRunRecordThread = true;
+    volatile boolean mIsRunRecordThread = true;
     private RecordRunnable mRecordRunnable;
     private Thread mRecordThread;
 
@@ -57,6 +57,9 @@ public class HolaModel implements TextureView.SurfaceTextureListener, Camera.Pre
 
     private int mPreviewWidth = 0;
     private int mPreviewHeight = 0;
+
+    private int mVideoWidth = 0;
+    private int mVideoHeight = 0;
 
     /**
      * レコーダーの状態を表すリスナー
@@ -80,7 +83,7 @@ public class HolaModel implements TextureView.SurfaceTextureListener, Camera.Pre
      * @param textureView プレビューを表示するView
      */
     public void startRecording(TextureView textureView) {
-        mCamera = mCameraRepository.getCamera(CameraRepository.CameraType.REAR, VIDEO_WIDTH, VIDEO_HEIGHT);
+        mCamera = mCameraRepository.getCamera(CameraRepository.CameraType.REAR, BASE_VIDEO_WIDTH, BASE_VIDEO_HEIGHT);
         if (mCamera == null) {
             return;
         }
@@ -91,14 +94,23 @@ public class HolaModel implements TextureView.SurfaceTextureListener, Camera.Pre
         mPreviewWidth = previewSize.width;
         mPreviewHeight = previewSize.height;
 
-        mRecorder = mRecorderRepository.getRecorder(OUTPUT_PATH, VIDEO_WIDTH, VIDEO_HEIGHT);
+        // 正方形に切り抜くので短い方を一辺にする
+        if (mPreviewWidth < mPreviewHeight) {
+            mVideoWidth = mPreviewWidth;
+            mVideoHeight = mPreviewWidth;
+        } else {
+            mVideoWidth = mPreviewHeight;
+            mVideoHeight = mPreviewHeight;
+        }
+
+        mRecorder = mRecorderRepository.getRecorder(OUTPUT_PATH, mVideoWidth, mVideoHeight);
         mAudioRecordRunnable = new AudioRecordRunnable(mRecorder.getSampleRate());
         mAudioThread = new Thread(mAudioRecordRunnable);
-        mRunAudioThread = true;
+        mIsRunAudioThread = true;
 
         mRecordRunnable = new RecordRunnable();
         mRecordThread = new Thread(mRecordRunnable);
-        mRunRecordThread = true;
+        mIsRunRecordThread = true;
 
         mFrameIndex = 0;
         mMaxFrameIndex = MAX_RECORD_SECONDS * (int)(mRecorder.getFrameRate());
@@ -114,10 +126,10 @@ public class HolaModel implements TextureView.SurfaceTextureListener, Camera.Pre
         int leftMargin = 0;
         if (mPreviewWidth < mPreviewHeight) {
             previewLayoutHeight = (int)(previewLayoutWidth * ((float)mPreviewHeight / mPreviewWidth));
-            topMargin = (previewLayoutHeight - layoutParams.height) / 2;
+            topMargin = (previewLayoutHeight - previewLayoutWidth) / 2;
         } else {
             previewLayoutWidth = (int)(previewLayoutHeight * ((float)mPreviewWidth / mPreviewHeight));
-            leftMargin = (previewLayoutWidth - layoutParams.width) / 2;
+            leftMargin = (previewLayoutWidth - previewLayoutHeight) / 2;
         }
         layoutParams.topMargin = -topMargin;
         layoutParams.leftMargin = -leftMargin;
@@ -151,12 +163,12 @@ public class HolaModel implements TextureView.SurfaceTextureListener, Camera.Pre
      */
     public void cancelRecording() {
         if (mRecorder != null && mIsRecording) {
+            mIsRecording = false;
+
             stopPreview();
             releaseAudioRecordThread();
             releaseRecordThread();
             releaseRecorder();
-
-            mIsRecording = false;
 
             Log.v(LOG_TAG,"Finishing recording, calling stop and release on recorder");
 
@@ -171,22 +183,22 @@ public class HolaModel implements TextureView.SurfaceTextureListener, Camera.Pre
      */
     public void stopRecording() {
         if (mRecorder != null && mIsRecording) {
+            mIsRecording = false;
+
             stopPreview();
             releaseAudioRecordThread();
             releaseRecordThread();
 
+            Log.d(LOG_TAG, "音声のフレーム数: " + mSamples.length);
             try {
-                for (int i = 0; i <= (mSamplesIndex - 1); i++) {
+                for (int i = 0; i < mSamplesIndex; i++) {
                     mRecorder.recordSamples(mSamples[i]);
                 }
-                Log.d(LOG_TAG, "音声のフレーム数: " + mSamples.length);
             } catch (FFmpegFrameRecorder.Exception e) {
                 Log.e(LOG_TAG, e.getMessage());
             }
 
             releaseRecorder();
-
-            mIsRecording = false;
 
             Log.v(LOG_TAG,"Finishing recording, calling stop and release on recorder");
 
@@ -200,13 +212,18 @@ public class HolaModel implements TextureView.SurfaceTextureListener, Camera.Pre
      * 録音のスレッドを解放する
      */
     private void releaseAudioRecordThread() {
-        mRunAudioThread = false;
+        mIsRunAudioThread = false;
         if (mAudioThread != null) {
             try {
                 mAudioThread.join();
             } catch (InterruptedException e) {
                 Log.e(LOG_TAG, e.toString());
             }
+        }
+        if (mAudioRecord != null) {
+            mAudioRecord.stop();
+            mAudioRecord.release();
+            mAudioRecord = null;
         }
         mAudioRecordRunnable = null;
         mAudioThread = null;
@@ -216,7 +233,7 @@ public class HolaModel implements TextureView.SurfaceTextureListener, Camera.Pre
      * 録画のスレッドを解放する
      */
     private void releaseRecordThread() {
-        mRunRecordThread = false;
+        mIsRunRecordThread = false;
         if (mRecordThread != null) {
             try {
                 mRecordThread.join();
@@ -270,21 +287,17 @@ public class HolaModel implements TextureView.SurfaceTextureListener, Camera.Pre
 
             ShortBuffer audioData;
             int bufferReadResult;
-            while (mRunAudioThread) {
-                audioData = mSamples[mSamplesIndex % mSamples.length];
+            while (mIsRunAudioThread) {
+                if (mSamplesIndex >= mSamples.length) {
+                    return;
+                }
+                audioData = mSamples[mSamplesIndex];
                 audioData.position(0).limit(0);
-
-                mSamplesIndex += 1;
 
                 bufferReadResult = mAudioRecord.read(audioData.array(), 0, audioData.capacity());
                 audioData.limit(bufferReadResult);
-            }
-            Log.v(LOG_TAG, "AudioThread Finished, release audioRecord");
 
-            if (mAudioRecord != null) {
-                mAudioRecord.stop();
-                mAudioRecord.release();
-                mAudioRecord = null;
+                mSamplesIndex += 1;
             }
         }
     }
@@ -295,7 +308,7 @@ public class HolaModel implements TextureView.SurfaceTextureListener, Camera.Pre
     private class RecordRunnable implements Runnable {
         @Override
         public void run() {
-            while (mRunRecordThread) {
+            while (mIsRunRecordThread) {
                 if (!mQueueTimestamps.isEmpty()) {
                     long t = mQueueTimestamps.get(0);
                     if (t > mRecorder.getTimestamp()) {
@@ -306,7 +319,9 @@ public class HolaModel implements TextureView.SurfaceTextureListener, Camera.Pre
 
                 if (!mQueueImageFrames.isEmpty()) {
                     try {
-                        FFmpegFrameFilter filter = new FFmpegFrameFilter("crop=" + VIDEO_WIDTH + ":" + VIDEO_HEIGHT, mPreviewWidth, mPreviewHeight);
+                        String command = String.format("crop=%d:%d:%d:%d", mVideoWidth, mVideoHeight,
+                                (mPreviewWidth - mVideoWidth) / 2, (mPreviewHeight - mVideoHeight) / 2);
+                        FFmpegFrameFilter filter = new FFmpegFrameFilter(command, mPreviewWidth, mPreviewHeight);
                         filter.setPixelFormat(avutil.AV_PIX_FMT_NV21);
                         filter.start();
                         filter.push(mQueueImageFrames.get(0));
@@ -358,12 +373,13 @@ public class HolaModel implements TextureView.SurfaceTextureListener, Camera.Pre
         ((ByteBuffer) frame.image[0].position(0)).put(data);
         mQueueImageFrames.add(frame);
 
-        mFrameIndex += 1;
-
         // 指定数の撮影が終了した時
         if (mFrameIndex >= mMaxFrameIndex) {
             stopRecording();
+            return;
         }
+
+        mFrameIndex += 1;
     }
 
     /**
