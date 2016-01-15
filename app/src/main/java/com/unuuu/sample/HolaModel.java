@@ -38,13 +38,7 @@ public class HolaModel implements TextureView.SurfaceTextureListener, Camera.Pre
 
     /* audio data getting thread */
     private AudioRecord mAudioRecord;
-    volatile boolean mIsRunAudioThread = true;
-    private AudioRecordRunnable mAudioRecordRunnable;
-    private Thread mAudioThread;
-    private ShortBuffer[] mSamples;
-    private int mSamplesIndex;
-
-    volatile boolean mIsRunRecordThread = true;
+    volatile boolean mIsRunRecordThread = false;
     private RecordRunnable mRecordRunnable;
     private Thread mRecordThread;
 
@@ -104,11 +98,8 @@ public class HolaModel implements TextureView.SurfaceTextureListener, Camera.Pre
         }
 
         mRecorder = mRecorderRepository.getRecorder(OUTPUT_PATH, mVideoWidth, mVideoHeight);
-        mAudioRecordRunnable = new AudioRecordRunnable(mRecorder.getSampleRate());
-        mAudioThread = new Thread(mAudioRecordRunnable);
-        mIsRunAudioThread = true;
 
-        mRecordRunnable = new RecordRunnable();
+        mRecordRunnable = new RecordRunnable(mRecorder.getSampleRate());
         mRecordThread = new Thread(mRecordRunnable);
         mIsRunRecordThread = true;
 
@@ -143,7 +134,6 @@ public class HolaModel implements TextureView.SurfaceTextureListener, Camera.Pre
             mRecorder.start();
             mStartTime = System.currentTimeMillis();
             mIsRecording = true;
-            mAudioThread.start();
             mRecordThread.start();
         } catch (FFmpegFrameRecorder.Exception e) {
             Log.e(LOG_TAG, e.getMessage());
@@ -166,7 +156,6 @@ public class HolaModel implements TextureView.SurfaceTextureListener, Camera.Pre
             mIsRecording = false;
 
             stopPreview();
-            releaseAudioRecordThread();
             releaseRecordThread();
             releaseRecorder();
 
@@ -186,18 +175,7 @@ public class HolaModel implements TextureView.SurfaceTextureListener, Camera.Pre
             mIsRecording = false;
 
             stopPreview();
-            releaseAudioRecordThread();
             releaseRecordThread();
-
-            Log.d(LOG_TAG, "音声のフレーム数: " + mSamples.length);
-            try {
-                for (int i = 0; i < mSamplesIndex; i++) {
-                    mRecorder.recordSamples(mSamples[i]);
-                }
-            } catch (FFmpegFrameRecorder.Exception e) {
-                Log.e(LOG_TAG, e.getMessage());
-            }
-
             releaseRecorder();
 
             Log.v(LOG_TAG,"Finishing recording, calling stop and release on recorder");
@@ -206,27 +184,6 @@ public class HolaModel implements TextureView.SurfaceTextureListener, Camera.Pre
                 mRecordInfoListener.onFinish();
             }
         }
-    }
-
-    /**
-     * 録音のスレッドを解放する
-     */
-    private void releaseAudioRecordThread() {
-        mIsRunAudioThread = false;
-        if (mAudioThread != null) {
-            try {
-                mAudioThread.join();
-            } catch (InterruptedException e) {
-                Log.e(LOG_TAG, e.toString());
-            }
-        }
-        if (mAudioRecord != null) {
-            mAudioRecord.stop();
-            mAudioRecord.release();
-            mAudioRecord = null;
-        }
-        mAudioRecordRunnable = null;
-        mAudioThread = null;
     }
 
     /**
@@ -262,12 +219,12 @@ public class HolaModel implements TextureView.SurfaceTextureListener, Camera.Pre
     }
 
     /**
-     * 録画中に録音するクラス
+     * 録画録画するクラス
      */
-    private class AudioRecordRunnable implements Runnable {
+    private class RecordRunnable implements Runnable {
         private int mSamplingRate;
 
-        public AudioRecordRunnable(int samplingRate) {
+        public RecordRunnable(int samplingRate) {
             mSamplingRate = samplingRate;
         }
 
@@ -277,39 +234,17 @@ public class HolaModel implements TextureView.SurfaceTextureListener, Camera.Pre
 
             int bufferSize = AudioRecord.getMinBufferSize(mSamplingRate, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT);
             mAudioRecord = new AudioRecord(MediaRecorder.AudioSource.MIC, mSamplingRate, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT, bufferSize);
-
-            mSamplesIndex = 0;
-            mSamples = new ShortBuffer[MAX_RECORD_SECONDS * mSamplingRate * 2 / bufferSize + 1];
-            for (int i = 0; i < mSamples.length; i++) {
-                mSamples[i] = ShortBuffer.allocate(bufferSize);
-            }
             mAudioRecord.startRecording();
+
+            String command = String.format("crop=%d:%d:%d:%d", mVideoWidth, mVideoHeight,
+                    (mPreviewWidth - mVideoWidth) / 2, (mPreviewHeight - mVideoHeight) / 2);
+            FFmpegFrameFilter filter = new FFmpegFrameFilter(command, mPreviewWidth, mPreviewHeight);
+            filter.setPixelFormat(avutil.AV_PIX_FMT_NV21);
 
             ShortBuffer audioData;
             int bufferReadResult;
-            while (mIsRunAudioThread) {
-                if (mSamplesIndex >= mSamples.length) {
-                    return;
-                }
-                audioData = mSamples[mSamplesIndex];
-                audioData.position(0).limit(0);
-
-                bufferReadResult = mAudioRecord.read(audioData.array(), 0, audioData.capacity());
-                audioData.limit(bufferReadResult);
-
-                mSamplesIndex += 1;
-            }
-        }
-    }
-
-    /**
-     * 録画中に録画するクラス
-     */
-    private class RecordRunnable implements Runnable {
-        @Override
-        public void run() {
-            while (mIsRunRecordThread) {
-                if (!mQueueTimestamps.isEmpty()) {
+            while (hasRecordingQueue()) {
+                if (0 < mQueueTimestamps.size()) {
                     long t = mQueueTimestamps.get(0);
                     if (t > mRecorder.getTimestamp()) {
                         mRecorder.setTimestamp(t);
@@ -317,22 +252,50 @@ public class HolaModel implements TextureView.SurfaceTextureListener, Camera.Pre
                     mQueueTimestamps.remove(0);
                 }
 
-                if (!mQueueImageFrames.isEmpty()) {
+                if (0 < mQueueImageFrames.size()) {
                     try {
-                        String command = String.format("crop=%d:%d:%d:%d", mVideoWidth, mVideoHeight,
-                                (mPreviewWidth - mVideoWidth) / 2, (mPreviewHeight - mVideoHeight) / 2);
-                        FFmpegFrameFilter filter = new FFmpegFrameFilter(command, mPreviewWidth, mPreviewHeight);
-                        filter.setPixelFormat(avutil.AV_PIX_FMT_NV21);
                         filter.start();
                         filter.push(mQueueImageFrames.get(0));
                         mRecorder.record(filter.pull());
+                        filter.stop();
                     } catch (FFmpegFrameFilter.Exception | FFmpegFrameRecorder.Exception e) {
                         Log.e(LOG_TAG, e.getMessage());
                     }
                     mQueueImageFrames.remove(0);
                 }
+
+                if (!mIsRunRecordThread) {
+                    continue;
+                }
+
+                audioData = ShortBuffer.allocate(bufferSize);
+                audioData.position(0).limit(0);
+
+                bufferReadResult = mAudioRecord.read(audioData.array(), 0, audioData.capacity());
+                audioData.limit(bufferReadResult);
+
+                try {
+                    mRecorder.recordSamples(audioData);
+                } catch (FFmpegFrameRecorder.Exception e) {
+                    Log.e(LOG_TAG, e.getMessage());
+                }
+            }
+
+            if (mAudioRecord != null) {
+                mAudioRecord.stop();
+                mAudioRecord.release();
+                mAudioRecord = null;
             }
         }
+    }
+
+    /**
+     * 録画のキューがあるかどうか
+     *
+     * @return 録画のキューがあるかどうか
+     */
+    private boolean hasRecordingQueue() {
+        return mIsRunRecordThread || 0 < mQueueImageFrames.size() || 0 < mQueueTimestamps.size();
     }
 
     @Override
